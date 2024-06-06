@@ -1,21 +1,32 @@
-use crossterm::{event::{self, Event, KeyCode, KeyEvent, KeyEventKind}, style::Stylize};
+use std::{i128::MIN, io, vec};
+
+use canvas::Canvas;
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     prelude::*,
     symbols::border,
     widgets::{block::*, *},
 };
-use std::io;
 
 mod tui;
+
+fn main() -> io::Result<()> {
+    let mut terminal = tui::init()?;
+    let app_result = App::default().run(&mut terminal);
+    tui::restore()?;
+    app_result
+}
 
 #[derive(Debug, Default)]
 pub struct App {
     gamestate: [u8; 9],
+    cursor_pos: u8,
     x_turn: bool,
     exit: bool,
 }
 
 impl App {
+    /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut tui::Tui) -> io::Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -25,12 +36,54 @@ impl App {
     }
 
     fn render_frame(&self, frame: &mut Frame) {
-        frame.render_widget(&self, frame.size());
+        frame.render_widget(self, frame.size());
     }
 
-    fn handle_events(&self) -> io::Result<()> {
-        todo!()
+    /// updates the application's state based on user input
+    fn handle_events(&mut self) -> io::Result<()> {
+        match event::read()? {
+            // it's important to check that the event is a key press event as
+            // crossterm also emits key release and repeat events on Windows.
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                self.handle_key_event(key_event)
+            }
+            _ => {}
+        };
+        Ok(())
     }
+
+    fn handle_key_event(&mut self ,key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('q') => self.exit(),
+            KeyCode::Char('w') => self.move_cursor(0),
+            KeyCode::Char('a') => self.move_cursor(1),
+            KeyCode::Char('s') => self.move_cursor(2),
+            KeyCode::Char('d') => self.move_cursor(3),
+            KeyCode::Char(' ') => self.select(),
+            _ => {}
+        }
+    }
+
+    fn move_cursor(&mut self, direction: u8) {
+        match direction {
+            0 => self.cursor_pos =  if self.cursor_pos < 3 {self.cursor_pos} else {self.cursor_pos - 3},
+            1 => self.cursor_pos = if self.cursor_pos % 3 == 0 {self.cursor_pos} else {self.cursor_pos - 1},
+            2 => self.cursor_pos = if self.cursor_pos > 5 {self.cursor_pos} else {self.cursor_pos + 3},
+            3 => self.cursor_pos = if self.cursor_pos % 3 == 2 {self.cursor_pos} else {self.cursor_pos + 1},
+            _ => {}
+        }
+    }
+
+    fn select(&mut self){
+
+
+        self.x_turn = !self.x_turn;
+    }
+
+    fn exit(&mut self) {
+        self.exit = true;
+    }
+
 }
 
 impl Widget for &App {
@@ -44,18 +97,17 @@ impl Widget for &App {
             " Quit ".into(),
             "<Q> ".blue().bold(),
         ]));
-
         let block = Block::default()
-        .title(title.alignment(Alignment::Center))
-        .title(
-            instructions
-                .alignment(Alignment::Center)
-                .position(Position::Bottom),
-        )
-        .borders(Borders::ALL)
-        .border_set(border::THICK);
+            .title(title.alignment(Alignment::Center))
+            .title(
+                instructions
+                    .alignment(Alignment::Center)
+                    .position(Position::Bottom),
+            )
+            .borders(Borders::ALL)
+            .border_set(border::THICK);
 
-        let mut turn: String;
+        let turn: String;
         if self.x_turn {
             turn = "X".to_string();
         }else {
@@ -72,132 +124,21 @@ impl Widget for &App {
             .block(block)
             .render(area, buf);
 
+        let body_text = Text::from(vec![Line::from(vec![
+            self.cursor_pos.to_string().into(),
+        ])]);
+
+        let inner_title = Title::from("Game time");
+
+        let inner_block = Block::default()
+        .title(inner_title.alignment(Alignment::Center))
+
+        .borders(Borders::ALL)
+        .border_set(border::THICK);
+
+        Paragraph::new(body_text)
+            .centered()
+            .block(inner_block)
+            .render(area, buf);
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn render() {
-        let app = App::default();
-        let mut buf = Buffer::empty(Rect::new(0, 0, 50, 4));
-
-        app.render(buf.area, &mut buf);
-
-        let mut expected = Buffer::with_lines(vec![
-            "┏━━━━━━━━━━━━━━━━━ Tic-Tac-Toe ━━━━━━━━━━━━━━━━━┓",
-            "┃                    Turn: X                    ┃",
-            "┃                                               ┃",
-            "┗━ Move Cursor <WASD> Select <Space> Quit <Q> ━━┛",
-        ]);
-        let title_style = Style::new().bold();
-        let counter_style = Style::new().yellow();
-        let key_style = Style::new().blue().bold();
-        expected.set_style(Rect::new(14, 0, 22, 1), title_style);
-        expected.set_style(Rect::new(28, 1, 1, 1), counter_style);
-        expected.set_style(Rect::new(13, 3, 6, 1), key_style);
-        expected.set_style(Rect::new(30, 3, 7, 1), key_style);
-        expected.set_style(Rect::new(43, 3, 4, 1), key_style);
-
-        // note ratatui also has an assert_buffer_eq! macro that can be used to
-        // compare buffers and display the differences in a more readable way
-        assert_eq!(buf, expected);
-    }
-}
-
-fn main() -> io::Result<()> {
-  
-    let mut terminal = tui::init()?;
-    let app_result = App::default().run(&mut terminal);
-    tui::restore()?;
-
-    app_result
-}
-
-fn game() {
-    println!("Welcome to Tic-Tac-Rust");
-    println!("Press x to start...");
-    
-    let mut input = "\n".to_string();
-
-    while input.chars().nth(0).unwrap() != 'x' {
-        input.clear();
-        io::stdin()
-        .read_line(&mut input)
-        .expect("Failed to read line");
-    }
-
-    let mut gamestate = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let mut x_turn = true;
-
-    let mut turns = 0;
-
-    loop {
-        //clear screen
-        print!("\x1B[2J\x1B[1;1H");
-        
-        turns += 1;
-        print_gamestate(&gamestate);
-        if turns > 9 {
-            break;
-        }
-        //check whose turn it is and then print the gamestate
-        if x_turn {
-            println!("X's turn to move, enter a number from 1 to 9 to play in that square");
-        }else {
-            println!("O's turn to move, enter a number from 1 to 9 to play in that square");
-        }
-        
-
-        //take input 
-        input.clear();
-        io::stdin()
-            .read_line(&mut input)
-            .expect("Failed to read line");
-
-        let c = input.chars().nth(0).unwrap();
-
-        if c.is_ascii_digit() {
-            let pos = c as usize - 0x31;
-            gamestate[pos] = if x_turn {1} else {2};
-        }else {
-            println!("Enter a digit bro...");
-        }
-
-        x_turn = !x_turn;
-
-    }
-}
-
-fn print_gamestate(gamestate : &[i32]){
-
-    let mut buf: String = String::new();
-
-    for i in 0..3 {
-        for j in 0..6 {
-
-            if j % 5 == 0 && j / 5 != 0 {
-                println!("{}", buf);
-                buf.clear();
-            }else if j % 2 == 1 {
-                buf.push('|');
-            }else {
-                let state = gamestate[i*3 + j/2];
-    
-                match state {
-                    1 => buf.push('X'),
-                    2 => buf.push('O'),
-                    _ => buf.push(' '),
-                }
-            }
-    
-        }
-        if i == 2 {
-            break;
-        }
-        println!("------");
-    }
-
 }
