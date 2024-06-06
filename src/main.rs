@@ -1,13 +1,12 @@
-use std::{io::{self, IntoInnerError}, os::unix::raw::gid_t, rc::Rc, vec};
+use std::{io::{self}, rc::Rc, vec};
 
-use canvas::Canvas;
+use canvas::{Canvas, Context};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     prelude::*,
     symbols::border,
     widgets::{block::*, *},
     style::Color,
-    widgets::*,
 };
 
 mod tui;
@@ -167,27 +166,45 @@ impl Widget for &App {
             let i: usize = n / 3;
             let j: usize = n % 3;
 
-            let text = match self.gamestate[n] {
-                0 => " ",
-                1 => "X",
-                2 => "O",
-                _ => "?",
-            };
+            let mut circle = canvas::Circle::default();
+            circle.radius = 90.0;
+
+            let cross1 = canvas::Line::new(-150.0, -80.0, 150.0, 80.0, Color::White);
+            let cross2 = canvas::Line::new(-150.0, 80.0, 150.0, -80.0, Color::White);
 
             if n as u8 == self.cursor_pos {
-                Paragraph::new(text)
-                .centered()
-                .block(Block::default().borders(Borders::all()).blue())
-                .render(inner_grid[i][j], buf);         
-            }else {
-                Paragraph::new(text)
-                    .centered()
-                    .block(Block::default().borders(Borders::all()))
+                Canvas::default()
+                    .block(Block::default().borders(Borders::all()).blue())
+                    .marker(symbols::Marker::Braille)
+                    .paint(|ctx: &mut Context| {
+                        if self.gamestate[n] == 1 {
+                            ctx.draw(&cross1);
+                            ctx.draw(&cross2);
+                        }else if self.gamestate[n] == 2{
+                            ctx.draw(&circle);
+                        }
+                    })
+                    .x_bounds([-180.0, 180.0])
+                    .y_bounds([-90.0, 90.0])
                     .render(inner_grid[i][j], buf);
+      
+            }else {
+                Canvas::default()
+                    .block(Block::default().borders(Borders::all()))
+                    .marker(symbols::Marker::Braille)
+                    .paint(|ctx: &mut Context| {
+                        if self.gamestate[n] == 1 {
+                            ctx.draw(&cross1);
+                            ctx.draw(&cross2);
+                        }else if self.gamestate[n] == 2{
+                            ctx.draw(&circle);
+                        }
+                    })
+                    .x_bounds([-180.0, 180.0])
+                    .y_bounds([-90.0, 90.0])
+                    .render(inner_grid[i][j], buf);
+
             }
-
         }
-
-        }
-        
+    }
 }
