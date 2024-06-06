@@ -1,4 +1,4 @@
-use std::{i128::MIN, io, vec};
+use std::{io::{self, IntoInnerError}, os::unix::raw::gid_t, rc::Rc, vec};
 
 use canvas::Canvas;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -6,6 +6,8 @@ use ratatui::{
     prelude::*,
     symbols::border,
     widgets::{block::*, *},
+    style::Color,
+    widgets::*,
 };
 
 mod tui;
@@ -28,9 +30,13 @@ pub struct App {
 impl App {
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut tui::Tui) -> io::Result<()> {
+        self.x_turn = true; //start with X's turn
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events()?;
+
+            
+
         }
         Ok(())
     }
@@ -75,9 +81,10 @@ impl App {
     }
 
     fn select(&mut self){
-
-
-        self.x_turn = !self.x_turn;
+        if self.gamestate[self.cursor_pos as usize] == 0 {
+            self.gamestate[self.cursor_pos as usize] = if self.x_turn {1} else {2};
+            self.x_turn = !self.x_turn;
+        }
     }
 
     fn exit(&mut self) {
@@ -119,26 +126,68 @@ impl Widget for &App {
             turn.yellow(),
         ])]);
 
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![
+                Constraint::Percentage(10),
+                Constraint::Percentage(90),
+            ])
+            .split(area);
+
         Paragraph::new(turn_text)
             .centered()
             .block(block)
-            .render(area, buf);
+            .render(layout[0], buf);
 
-        let body_text = Text::from(vec![Line::from(vec![
-            self.cursor_pos.to_string().into(),
-        ])]);
+        let grid_layout: Rc<[Rect]> = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+            ])
+            .split(layout[1]);
 
-        let inner_title = Title::from("Game time");
+        let mut inner_grid: Vec<Rc<[Rect]>> = Vec::new();
 
-        let inner_block = Block::default()
-        .title(inner_title.alignment(Alignment::Center))
+        for i in 0..3 {            
+            let temp = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(vec![
+                    Constraint::Ratio(1, 3),
+                    Constraint::Ratio(1, 3),
+                    Constraint::Ratio(1, 3),
+                ])
+                .split(grid_layout[i]);
 
-        .borders(Borders::ALL)
-        .border_set(border::THICK);
+            inner_grid.push(temp);
+        }
 
-        Paragraph::new(body_text)
-            .centered()
-            .block(inner_block)
-            .render(area, buf);
-    }
+        for n in 0..9 {
+            let i: usize = n / 3;
+            let j: usize = n % 3;
+
+            let text = match self.gamestate[n] {
+                0 => " ",
+                1 => "X",
+                2 => "O",
+                _ => "?",
+            };
+
+            if n as u8 == self.cursor_pos {
+                Paragraph::new(text)
+                .centered()
+                .block(Block::default().borders(Borders::all()).blue())
+                .render(inner_grid[i][j], buf);         
+            }else {
+                Paragraph::new(text)
+                    .centered()
+                    .block(Block::default().borders(Borders::all()))
+                    .render(inner_grid[i][j], buf);
+            }
+
+        }
+
+        }
+        
 }
