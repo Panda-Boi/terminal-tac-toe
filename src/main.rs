@@ -24,24 +24,72 @@ pub struct App {
     cursor_pos: u8,
     x_turn: bool,
     exit: bool,
+    turn: u8,
+    won: u8,
 }
 
 impl App {
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut tui::Tui) -> io::Result<()> {
         self.x_turn = true; //start with X's turn
-        while !self.exit {
+        while self.won == 0 {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events()?;
 
-            
+            self.check_state();
+
+            if self.exit {
+                return Ok(());
+            }
 
         }
+
+        self.cursor_pos = 9;
+        terminal.draw(|frame| self.render_frame(frame))?;
+
+        while !self.exit {
+            self.handle_events()?;
+        }
+
         Ok(())
     }
 
     fn render_frame(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.size());
+    }
+
+    fn check_state(&mut self){
+        if self.turn < 4 {
+            return
+        }
+
+        //checking the rows and columns
+        for i in 0..3 {
+            let n = i * 3;
+            if self.gamestate[n] == self.gamestate[n+1] && self.gamestate[n] == self.gamestate[n+2] {
+                self.won = self.gamestate[n];
+                return
+            }
+
+            if self.gamestate[i] == self.gamestate[i+3] && self.gamestate[i] == self.gamestate[i+6] {
+                self.won = self.gamestate[i];
+                return
+            }
+        }
+
+        //checking the diagonals
+        if self.gamestate[0] == self.gamestate[4] && self.gamestate[0] == self.gamestate[8] {
+            self.won = self.gamestate[0];
+        }
+        if self.gamestate[2] == self.gamestate[4] && self.gamestate[2] == self.gamestate[6] {
+            self.won = self.gamestate[2];
+        }
+
+        if self.turn > 8 {
+            self.won = 3;
+            return
+        }
+
     }
 
     /// updates the application's state based on user input
@@ -83,6 +131,7 @@ impl App {
         if self.gamestate[self.cursor_pos as usize] == 0 {
             self.gamestate[self.cursor_pos as usize] = if self.x_turn {1} else {2};
             self.x_turn = !self.x_turn;
+            self.turn += 1;
         }
     }
 
@@ -120,10 +169,20 @@ impl Widget for &App {
             turn = "O".to_string();
         }
 
-        let turn_text = Text::from(vec![Line::from(vec![
+        let mut turn_text = Text::from(vec![Line::from(vec![
             "Turn: ".into(),
             turn.yellow(),
         ])]);
+
+        if self.won != 0 {
+
+            let win_player = if self.won == 1 {String::from("X")} else if self.won == 2 {String::from("O")} else {String::from("Nobody")};
+
+            turn_text  = Text::from(vec![Line::from(vec![
+                win_player.yellow(),
+                " wins!".yellow().into(),
+            ])]);
+        }
 
         let layout = Layout::default()
             .direction(Direction::Vertical)
