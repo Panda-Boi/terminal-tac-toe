@@ -1,5 +1,6 @@
-use std::{io::{self}, rc::Rc, vec};
+use std::{io, rc::Rc, vec};
 
+use ai::minimax;
 use canvas::{Canvas, Context};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -10,10 +11,11 @@ use ratatui::{
 };
 
 mod tui;
+mod ai;
 
 fn main() -> io::Result<()> {
-    let mut terminal = tui::init()?;
-    let app_result = App::default().run(&mut terminal);
+    let mut terminal: Terminal<CrosstermBackend<io::Stdout>> = tui::init()?;
+    let app_result: Result<(), io::Error> = App::default().run(&mut terminal);
     tui::restore()?;
     app_result
 }
@@ -26,21 +28,42 @@ pub struct App {
     exit: bool,
     turn: u8,
     won: u8,
+    ai_mode: bool,
+    start: bool,
 }
 
 impl App {
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut tui::Tui) -> io::Result<()> {
-        self.x_turn = true; //start with X's turn
-        while self.won == 0 {
-            terminal.draw(|frame| self.render_frame(frame))?;
+
+
+        //start screen to select game mode (1 / 2 player)
+        terminal.draw(|frame| self.render_start_screen(frame))?;
+
+        while !self.start {
             self.handle_events()?;
 
-            self.check_state();
+            if self.exit {
+                return Ok(())
+            }
+        }
+
+        self.x_turn = true; //start with X's turn
+        while self.won == 0 {
 
             if self.exit {
                 return Ok(());
             }
+
+            terminal.draw(|frame: &mut Frame| self.render_frame(frame))?;
+
+            self.handle_events()?;
+
+            if self.ai_mode {
+                self.run_ai_player();
+            }
+
+            self.check_state();
 
         }
 
@@ -54,11 +77,41 @@ impl App {
         Ok(())
     }
 
+    fn render_start_screen(&self, frame: &mut Frame) {
+        let title = Title::from(" Terminal-Tac-Toe ".bold());
+        let instructions = Title::from(Line::from(vec![
+            " Singleplayer ".into(),
+            "<1>".blue().bold(),
+            " Multiplayer ".into(),
+            "<2>".blue().bold(),
+            " Quit ".into(),
+            "<Q> ".blue().bold(),
+        ]));
+
+        let block = Block::default()
+        .title(title.alignment(Alignment::Center))
+        .title(
+            instructions
+                .alignment(Alignment::Center)
+                .position(Position::Bottom),
+        )
+        .borders(Borders::ALL)
+        .border_set(border::THICK);
+
+        let screen = Paragraph::new("Welcome To Terminal-Tac-Toe!")
+        .block(block)
+        .centered();
+
+        frame.render_widget(screen, frame.size());
+
+    }
+
     fn render_frame(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.size());
     }
 
-    fn check_state(&mut self){
+    fn check_state(&mut self) {
+        //if on turns 1-3 no need to check win condition
         if self.turn < 4 {
             return
         }
@@ -85,6 +138,7 @@ impl App {
             self.won = self.gamestate[2];
         }
 
+        //if all 9 turns are finished then end in a draw
         if self.turn > 8 {
             self.won = 3;
             return
@@ -113,8 +167,17 @@ impl App {
             KeyCode::Char('s') => self.move_cursor(2),
             KeyCode::Char('d') => self.move_cursor(3),
             KeyCode::Char(' ') => self.select(),
+            KeyCode::Char('2') => self.start_game(true),
+            KeyCode::Char('1') => self.start_game(false),
             _ => {}
         }
+    }
+
+    fn start_game(&mut self, ai_on: bool){
+        if ai_on {
+            self.ai_mode = true;
+        }
+        self.start = true;
     }
 
     fn move_cursor(&mut self, direction: u8) {
@@ -129,21 +192,58 @@ impl App {
 
     fn select(&mut self){
         if self.gamestate[self.cursor_pos as usize] == 0 {
-            self.gamestate[self.cursor_pos as usize] = if self.x_turn {1} else {2};
-            self.x_turn = !self.x_turn;
-            self.turn += 1;
+            let player = if self.x_turn {1} else {2};
+            self.play_move(self.cursor_pos as usize, player)
         }
     }
 
     fn exit(&mut self) {
         self.exit = true;
     }
+    
+    //only plays as O for now
+    fn run_ai_player(&mut self){
+        if self.x_turn {
+            return
+        }
+
+        let mut best_value = 10;
+        let mut best_move = 9;
+
+        for i in 0..9 {
+            if self.gamestate[i] != 0 {continue;}
+
+            let mut next_gamestate = self.gamestate.clone();
+            next_gamestate[i] = 2;
+            let next_value = minimax(next_gamestate, !self.x_turn, self.turn as i8);
+
+            if next_value < best_value {
+                best_move = i;
+                best_value = next_value;
+            }        
+            
+        }
+
+        if best_move == 9 {
+            return
+        }
+
+        self.play_move(best_move, 2);
+
+    }
+
+    fn play_move(&mut self, pos: usize, player: u8){
+        self.gamestate[pos] = player;
+        self.x_turn = !self.x_turn;
+        self.turn += 1;
+    }
 
 }
 
 impl Widget for &App {
+
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Title::from(" Tic-Tac-Toe ".bold());
+        let title = Title::from(" Terminal-Tac-Toe ".bold());
         let instructions = Title::from(Line::from(vec![
             " Move Cursor ".into(),
             "<WASD>".blue().bold(),
